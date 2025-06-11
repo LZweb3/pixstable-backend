@@ -25,19 +25,24 @@ def submit_kyb():
     return handle_submission('KYB')
 
 def handle_submission(form_type):
-    data = request.form.to_dict()
-    client = Client(form_type=form_type, data=data)
-    db.session.add(client)
-    db.session.commit()
+    try:
+        data = request.form.to_dict()
+        client = Client(form_type=form_type, data=data)
+        db.session.add(client)
+        db.session.commit()
 
-    client_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(client.id))
-    os.makedirs(client_folder, exist_ok=True)
+        client_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(client.id))
+        os.makedirs(client_folder, exist_ok=True)
 
-    for file_key in request.files:
-        file = request.files[file_key]
-        file.save(os.path.join(client_folder, file.filename))
+        for file_key in request.files:
+            file = request.files[file_key]
+            file.save(os.path.join(client_folder, file.filename))
 
-    return jsonify({'message': 'Submitted successfully', 'client_id': client.id}), 201
+        return jsonify({'message': 'Submitted successfully', 'client_id': client.id}), 201
+
+    except Exception as e:
+        print("Erro ao processar submission:", e)
+        return jsonify({'error': 'Erro interno no servidor.'}), 500
 
 @app.route('/clients', methods=['GET'])
 def get_clients():
@@ -79,6 +84,33 @@ def update_client_status(client_id):
     client.status = status
     db.session.commit()
     return jsonify({'message': 'Status updated'})
+
+@app.route('/client/<int:client_id>', methods=['DELETE'])
+def delete_client(client_id):
+    client = Client.query.get(client_id)
+    if not client:
+        return jsonify({"error": "Cliente não encontrado"}), 404
+
+    try:
+        # Apagar os arquivos de documentos associados
+        client_folder = os.path.join(app.config['UPLOAD_FOLDER'], str(client.id))
+        if os.path.exists(client_folder):
+            for filename in os.listdir(client_folder):
+                file_path = os.path.join(client_folder, filename)
+                os.remove(file_path)
+                print(f"Arquivo removido: {file_path}")
+            os.rmdir(client_folder)
+            print(f"Pasta removida: {client_folder}")
+
+        # Remover o cliente do banco
+        db.session.delete(client)
+        db.session.commit()
+
+        return jsonify({"message": "Cliente apagado com sucesso."}), 200
+
+    except Exception as e:
+        print("Erro ao apagar cliente:", e)
+        return jsonify({"error": "Erro interno ao apagar cliente."}), 500
 
 @app.route('/uploads/<int:client_id>/<path:filename>', methods=['GET'])
 def uploaded_file(client_id, filename):
